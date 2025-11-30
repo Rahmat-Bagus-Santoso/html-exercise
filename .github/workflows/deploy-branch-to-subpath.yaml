@@ -1,0 +1,61 @@
+name: Deploy branch exercise to Pages subpath
+
+on:
+  push:
+    branches:
+      - 'exercise*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy-branch-subpath:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set variables
+        id: vars
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+          echo "project=$BRANCH_NAME" >> $GITHUB_OUTPUT
+
+      - name: Checkout main (to get other latihan folders)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: repo-main
+
+      - name: Checkout current branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          path: repo-branch
+
+      - name: Prepare public folder (merge main + branch override)
+        run: |
+          set -e
+          rm -rf public || true
+          mkdir -p public
+          cp -a repo-main/. public/
+          if [ -d "repo-branch/${{ steps.vars.outputs.project }}" ]; then
+            rm -rf "public/${{ steps.vars.outputs.project }}" || true
+            mkdir -p "public/${{ steps.vars.outputs.project }}"
+            cp -a "repo-branch/${{ steps.vars.outputs.project }}/." "public/${{ steps.vars.outputs.project }}/"
+            echo "Overrode public/${{ steps.vars.outputs.project }} with branch content"
+          else
+            echo "Branch does not contain folder '${{ steps.vars.outputs.project }}' — nothing to override"
+          fi
+
+      - name: Show public tree
+        run: find public -maxdepth 2 -type d -print || true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: public
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v1
