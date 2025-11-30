@@ -2,8 +2,8 @@ name: Deploy branch exercise to Pages subpath
 
 on:
   push:
-    branches:
-      - 'exercise*'
+    branches-ignore:
+      - main
   workflow_dispatch: {}
 
 permissions:
