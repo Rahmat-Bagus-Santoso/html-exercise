@@ -1,61 +1,62 @@
-name: Deploy branch exercise to Pages subpath
+name: Deploy to subpath - by folders name
 
 on:
   push:
-    branches-ignore:
+    branches:
       - main
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
 jobs:
-  deploy-branch-subpath:
+  deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Set variables
-        id: vars
-        run: |
-          BRANCH_NAME=${GITHUB_REF#refs/heads/}
-          echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
-          echo "project=$BRANCH_NAME" >> $GITHUB_OUTPUT
-
-      - name: Checkout main (to get other latihan folders)
+      - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: main
-          path: repo-main
 
-      - name: Checkout current branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.ref_name }}
-          path: repo-branch
-
-      - name: Prepare public folder (merge main + branch override)
+      - name: Prepare output directory
         run: |
-          set -e
-          rm -rf public || true
-          mkdir -p public
-          cp -a repo-main/. public/
-          if [ -d "repo-branch/${{ steps.vars.outputs.project }}" ]; then
-            rm -rf "public/${{ steps.vars.outputs.project }}" || true
-            mkdir -p "public/${{ steps.vars.outputs.project }}"
-            cp -a "repo-branch/${{ steps.vars.outputs.project }}/." "public/${{ steps.vars.outputs.project }}/"
-            echo "Overrode public/${{ steps.vars.outputs.project }} with branch content"
-          else
-            echo "Branch does not contain folder '${{ steps.vars.outputs.project }}' — nothing to override"
-          fi
+          rm -rf out
+          mkdir out
 
-      - name: Show public tree
-        run: find public -maxdepth 2 -type d -print || true
+      - name: Find all folders that contain index.html
+        shell: bash
+        run: |
+          echo "Scanning folders..."
+          for folder in */ ; do
+            # Skip special folders
+            if [[ "$folder" == ".github/" ]] || [[ "$folder" == "assets/" ]]; then
+              continue
+            fi
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v1
+            if [[ -f "$folder/index.html" ]]; then
+              folder_name=$(basename "$folder")
+              echo "Deploying $folder_name"
+              mkdir -p "out/$folder_name"
+              rsync -av "$folder" "out/$folder_name/"
+            else
+              echo "Skipping $folder (no index.html)"
+            fi
+          done
+
+      - name: Generate index.html
+        run: |
+          echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Projects</title></head><body>" > out/index.html
+          echo "<h1>Projects List</h1><ul>" >> out/index.html
+          for d in out/*/; do
+            name=$(basename "$d")
+            echo "<li><a href='./$name/'>$name</a></li>" >> out/index.html
+          done
+          echo "</ul></body></html>" >> out/index.html
+
+      - name: Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          path: public
-
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v1
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: out
